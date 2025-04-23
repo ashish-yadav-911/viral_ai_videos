@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - YouTube Automator{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Video Pipeline Dashboard</h1>
+
+<!-- Display Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<!-- Display Persistent Error Message (if any) -->
+{% if error %}
+    <div class="alert alert-danger" role="alert">
+        {{ error }}
+    </div>
+{% endif %}
+
+
+<!-- Topic Generation Form -->
+<div class="card mb-4">
+    <div class="card-header">Generate New Topics</div>
+    <div class="card-body">
+        <form action="{{ url_for('trigger_topic_generation') }}" method="POST" id="topic-gen-form">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label for="topic_input_type" class="form-label">Input Type</label>
+                    <select class="form-select" id="topic_input_type" name="topic_input_type" required>
+                        <option value="samples" selected>Sample Scripts (Paste below)</option>
+                        <option value="url">YouTube URL</option>
+                        <option value="script">Exact Script (Paste below)</option>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                     <label for="topic_input_text" class="form-label">Input Text / URL</label>
+                     <textarea class="form-control" id="topic_input_text" name="topic_input_text" rows="3" placeholder="Paste URL, exact script, or sample scripts (one per line for samples)..." required></textarea>
+                     <div class="form-text">For Samples type, paste one script idea or theme per line.</div>
+                </div>
+                 <div class="col-md-1">
+                     <label for="num_topics" class="form-label">Count</label>
+                     <input type="number" class="form-control" id="num_topics" name="num_topics" value="10" min="1" max="50">
+                 </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100" id="btn-generate-topics">Generate Topics</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<!-- Action Buttons for Processing -->
+<div class="mb-3">
+    <form action="{{ url_for('trigger_process_next') }}" method="POST" class="d-inline" id="process-next-form"> {# Added ID #}
+        {# Enable the button if db_manager is available #}
+        <button type="submit" class="btn btn-success" id="btn-process-next" {% if not db_manager %}disabled{% endif %}>
+            Process Next Videos
+        </button>
+    </form>
+    <form action="{{ url_for('trigger_orchestrator') }}" method="POST" class="d-inline" id="orchestrator-form"> {# Added ID #}
+        <button type="submit" class="btn btn-info" id="btn-run-orchestrator" {% if not db_manager %}disabled{% endif %}>
+            Run Daily Orchestrator (TODO)
+        </button>
+    </form>
+</div>
+
+<!-- Video Status Table -->
+<h2>Video Status</h2>
+<div class="table-responsive">
+    <table class="table table-striped table-hover table-sm">
+        <thead>
+            <tr>
+                <th>Topic</th>
+                <th>Status</th>
+                <th>Script Path</th>
+                <th>Video Path</th>
+                <th>YouTube URL</th>
+                <th>Last Error</th>
+                <th>Updated</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% if videos %}
+                {% for video in videos %}
+                  {# Check if video is a dictionary before proceeding #}
+                  {% if video is mapping %} {# 'mapping' checks if it's dictionary-like #}
+                    {# Create slug safely using .get #}
+                    {% set topic_str = video.get('topic', '') %}
+                    {% set topic_slug = topic_str | replace(' ', '-') | replace('?', '') | replace('!', '') | replace(':', '') | lower %}
+                    <tr>
+                        {# Display topic safely #}
+                        <td title="{{ topic_str }}">{{ topic_str[:50] }}{% if topic_str|length > 50 %}...{% endif %}</td>
+                        <td>
+                            {# Display pipeline status safely #}
+                            {% set status = video.get('pipeline_status', 'UNKNOWN') %}
+                            <span class="badge rounded-pill
+                                {% if status == 'DONE' %} bg-success
+                                {% elif status == 'FAILED' %} bg-danger
+                                {% elif status == 'PENDING_UPLOAD' %} bg-primary
+                                {% elif status == 'PENDING_EDIT' or status == 'PENDING_RENDER' %} bg-warning text-dark
+                                {% elif status == 'PENDING_ASSETS' %} bg-info text-dark
+                                {% else %} bg-secondary
+                                {% endif %}">
+                                {{ status }}
+                            </span>
+                        </td>
+
+                        {# Handle script path safely before replacing #}
+                        {% set script_path_raw = video.get('generated_script_path') %}
+                        {% set script_path_display = (script_path_raw | replace(config.get('BASE_DIR'), '.') if script_path_raw else '-') %}
+                        <td title="{{ script_path_raw or '' }}">{{ script_path_display[:40] }}{% if script_path_display != '-' and script_path_display|length > 40 %}...{% endif %}</td>
+
+                        {# Handle video path safely before replacing #}
+                        {% set video_path_raw = video.get('final_video_path') %}
+                        {% set video_path_display = (video_path_raw | replace(config.get('BASE_DIR'), '.') if video_path_raw else '-') %}
+                        <td title="{{ video_path_raw or '' }}">{{ video_path_display[:40] }}{% if video_path_display != '-' and video_path_display|length > 40 %}...{% endif %}</td>
+
+                        {# Handle youtube url safely #}
+                        <td>
+                            {% set yt_url = video.get('youtube_url') %}
+                            {% if yt_url %}
+                                <a href="{{ yt_url }}" target="_blank" class="btn btn-sm btn-outline-danger">Link</a>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+
+                        {# Handle last error safely before slicing #}
+                        {% set error_text = video.get('last_error') %}
+                        <td class="text-danger" title="{{ error_text or '' }}">
+                            {% if error_text %}
+                                {{ error_text[:30] }}{% if error_text|length > 30 %}...{% endif %}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+
+                        {# Display last updated safely #}
+                        <td>{{ video.get('last_updated', '-') }}</td>
+
+                        {# Action buttons based on status #}
+
+                    <td>
+                        <!-- Action buttons based on status -->
+                         {% if status == 'PENDING_EDIT' or status == 'PENDING_ASSETS' %}
+                             <a href="{{ url_for('editor', topic_slug=topic_slug) }}" class="btn btn-sm btn-warning me-1">Edit (TODO)</a>
+                         {% elif status == 'PENDING_UPLOAD' %}
+                            <button type="button" class="btn btn-sm btn-primary me-1" disabled title="YouTube Upload Disabled">Upload (Disabled)</button>
+                         {% elif status == 'FAILED' %}
+                             <button class="btn btn-sm btn-secondary me-1" disabled>Retry (TODO)</button>
+                         {% endif %}
+
+                         {# --- ADD DELETE FORM/BUTTON --- #}
+                         <form action="{{ url_for('delete_topic_route') }}" method="POST" class="d-inline"
+                               onsubmit="return confirm('Are you sure you want to permanently delete the topic \'{{ topic_str }}\'? This cannot be undone.');">
+                            {# Use the same topic_str variable we defined earlier #}
+                            <input type="hidden" name="topic_to_delete" value="{{ topic_str }}">
+                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Topic Entry">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+                                    <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+                                    <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
+                                </svg>
+                                <!-- Delete --> {# Optional text label #}
+                            </button>
+                        </form>
+                         {# --- END DELETE FORM/BUTTON --- #}
+
+                         {# Show placeholder if no specific action applies #}
+                         {% if status != 'PENDING_EDIT' and status != 'PENDING_ASSETS' and status != 'PENDING_UPLOAD' and status != 'FAILED' %}
+                             <span class="text-muted">-</span>
+                         {% endif %}
+                    </td>
+                    </tr>
+                  {% else %}
+                    {# This row will display if a None item or non-dict is found #}
+                    <tr>
+                        <td colspan="8" class="text-danger text-center fst-italic">Error: Found an unexpected invalid item in the video data list (Item: {{ video }}).</td>
+                    </tr>
+                  {% endif %}
+                {% endfor %}
+            {% elif not error %}
+                <tr>
+                    <td colspan="8" class="text-center fst-italic py-3">No video data found in the database. Try generating some topics!</td>
+                </tr>
+            {% else %}
+                 <tr>
+                    <td colspan="8" class="text-center fst-italic py-3 text-danger">Could not load video data due to a database connection error. Check console logs.</td>
+                </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
+
+{% block scripts_extra %}
+    <script>
+        // Simple JS to provide feedback on form submission
+
+        // Topic Generation Feedback
+        const topicForm = document.getElementById('topic-gen-form');
+        const generateBtn = document.getElementById('btn-generate-topics');
+        if (topicForm && generateBtn) {
+            topicForm.addEventListener('submit', function(event) {
+                const inputText = document.getElementById('topic_input_text');
+                if (!inputText.value.trim()) {
+                    alert("Please provide input text/URL.");
+                    event.preventDefault();
+                    return;
+                }
+                generateBtn.disabled = true;
+                generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating...';
+            });
+        }
+
+        // Process Next Videos Feedback
+        const processForm = document.getElementById('process-next-form');
+        const processBtn = document.getElementById('btn-process-next');
+        if(processForm && processBtn) {
+            processForm.addEventListener('submit', function() {
+                processBtn.disabled = true;
+                processBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing Steps...';
+            });
+        }
+
+        // Orchestrator Feedback (Optional)
+        const orchestratorForm = document.getElementById('orchestrator-form');
+        const orchestratorBtn = document.getElementById('btn-run-orchestrator');
+        if(orchestratorForm && orchestratorBtn) {
+            orchestratorForm.addEventListener('submit', function() {
+                orchestratorBtn.disabled = true;
+                 orchestratorBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Running...';
+            });
+        }
+
+    </script>
+{% endblock %}

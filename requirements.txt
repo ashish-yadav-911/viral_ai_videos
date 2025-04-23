@@ -1,0 +1,10 @@
+Flask>=2.0
+python-dotenv>=0.19
+openai>=1.0       
+requests>=2.25
+moviepy>=1.0.3
+yt-dlp 
+# pillow # Often needed by moviepy for image handling, good to include explicitly
+Pillow>=9.0
+cartesia>=0.1.0   
+deepgram-sdk>=3.0 

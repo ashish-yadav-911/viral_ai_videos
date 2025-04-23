@@ -1,0 +1,9 @@
+/* static/css/style.css */
+/* Add custom styles later */
+body {
+    padding-bottom: 60px; /* Add padding for footer */
+}
+
+.badge {
+    font-size: 0.9em;
+}

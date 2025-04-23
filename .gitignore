@@ -1,0 +1,53 @@
+# Virtual Environment
+.venv/
+venv/
+*.venv
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Secrets - IMPORTANT!
+.env
+credentials.json # Or wherever you store your Google OAuth client secret file
+
+# Generated media assets
+assets/*
+!assets/.gitkeep # Don't ignore the placeholder file itself
+# Specific media types (optional redundancy)
+*.mp4
+*.mp3
+*.wav
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.txt # Potentially ignore generated scripts if needed
+
+# Local background music (if not checked in)
+music/*
+!music/.gitkeep
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+
+# yt-dlp download cache/temp files
+*.part
+*.ytdl
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Log files (if any)
+*.log
+
+credentials.json
